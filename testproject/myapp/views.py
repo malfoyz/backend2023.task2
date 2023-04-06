@@ -1,5 +1,13 @@
 from django.shortcuts import render
-from django.http import HttpRequest, HttpResponse, JsonResponse, HttpResponseNotFound, Http404
+from django.urls import reverse
+from django.http import (
+    HttpRequest, 
+    HttpResponse, 
+    JsonResponse, 
+    HttpResponseNotFound, 
+    Http404, 
+    HttpResponseRedirect,
+)
 from django.shortcuts import (
     render,
     get_object_or_404,
@@ -12,7 +20,7 @@ import os
 import json
 import datetime
 
-from .models import User
+from .models import *
 from .forms import UserForm
 
 
@@ -94,9 +102,8 @@ def get_users_by_header(request: HttpRequest) -> HttpResponse:
 def get_or_update_or_delete_user(request: HttpRequest, user_id: int) -> HttpResponse:
     """Обработчик страницы изменения или удаления пользователей"""
 
-    user = User.objects.get(pk=user_id)
-
     if request.method == 'POST':
+        user = User.objects.get(pk=user_id)
         user_form = UserForm(request.POST, instance=user)
         if user_form.is_valid():
             user_form.save()
@@ -113,6 +120,7 @@ def get_or_update_or_delete_user(request: HttpRequest, user_id: int) -> HttpResp
             )
 
     if request.method == 'GET':
+        user = User.objects.get(pk=user_id)
         user_form = UserForm(instance=user)
         context = {
             'user': user,
@@ -125,6 +133,7 @@ def get_or_update_or_delete_user(request: HttpRequest, user_id: int) -> HttpResp
         )
 
     if request.method == 'PATCH':
+        user = User.objects.get(pk=user_id)
         data = {"id": user_id} | json.loads(request.body)
 
         if 'first_name' in data:
@@ -145,5 +154,137 @@ def get_or_update_or_delete_user(request: HttpRequest, user_id: int) -> HttpResp
             user = None
 
         return HttpResponse(status=204)
+    
+
+def get_products(request: HttpRequest) -> HttpResponse:
+    """Обработчик страницы с продуктами"""
+
+    products = Product.objects.all()
+    context = {
+        'products': products,
+        'title': 'Список продуктов',
+    }
+
+    return render(
+        request=request,
+        template_name='myapp/products.html',
+        context=context,
+    )
 
 
+def add_to_cart(request: HttpRequest, product_id: int) -> HttpResponse:
+    """Обработчик добавления товара в корзину с помощью куки"""
+
+    cart = request.COOKIES.get('cart')
+
+    if not cart:
+        cart = {}
+    else:
+        cart = json.loads(cart)
+    if str(product_id) in cart:
+        cart[str(product_id)] += 1
+    else:
+        cart[str(product_id)] = 1
+
+    response = HttpResponseRedirect(reverse('myapp:get_products'))
+    response.set_cookie('cart', json.dumps(cart))
+    return response
+
+
+# def add_to_cart(request: HttpRequest, product_id: int) -> HttpResponse:
+#     """Обработчик добавления товара в корзину с помощью сессии"""
+
+#     cart = request.session.get('cart', {})
+
+#     if str(product_id) in cart:
+#         cart[str(product_id)] += 1
+#     else:
+#         cart[str(product_id)] = 1
+
+#     request.session['cart'] = cart
+#     return redirect('myapp:get_products')
+
+
+def remove_from_cart(request: HttpRequest, product_id: int) -> HttpResponse:
+    """Обработчик удаления товара из корзины с помощью куки"""
+    
+    cart = request.COOKIES.get('cart')
+    if cart:
+        cart = json.loads(cart)
+        if str(product_id) in cart:
+            del cart[str(product_id)]
+            response = HttpResponseRedirect(reverse('myapp:get_cart'))
+            response.set_cookie('cart', json.dumps(cart))
+            return response
+    return HttpResponse(status=204)
+
+
+# def remove_from_cart(request: HttpRequest, product_id: int) -> HttpResponse:
+#     """Обработчик удаления товара из корзины с помощью сессии"""
+
+#     cart = request.session.get('cart', {})
+#     if str(product_id) in cart:
+#         del cart[str(product_id)]
+#         request.session['cart'] = cart
+#     return redirect('myapp:get_cart')
+
+
+def get_cart(request: HttpRequest) -> HttpResponse:
+    """Обработчик страницы с корзиной с помощью куки"""
+
+    cart = request.COOKIES.get('cart')
+    if cart:
+        cart = json.loads(cart)
+    else:
+        cart = {}
+
+    products_ids = cart.keys()
+    products = Product.objects.filter(pk__in=products_ids)
+    products_dicts = []
+    for product in products:
+        products_dicts.append({
+            'id': product.pk,
+            'name': product.name,
+            'price': float(product.price) * cart[str(product.pk)],
+            'image': product.image,
+            'quantity': cart[str(product.pk)]
+        })
+
+    context = {
+        'products': products_dicts,
+        'title': 'Корзина',
+    }
+
+    return render(
+        request=request,
+        template_name='myapp/cart.html',
+        context=context,
+    )
+
+
+def get_cart(request: HttpRequest) -> HttpResponse:
+    """Обработчик страницы с корзиной с помощью сессии"""
+
+    cart = request.session.get('cart', {})
+    products_ids = cart.keys()
+    products = Product.objects.filter(pk__in=products_ids)
+    products_dicts = []
+
+    for product in products:
+        products_dicts.append({
+            'id': product.pk,
+            'name': product.name,
+            'price': float(product.price) * cart[str(product.pk)],
+            'image': product.image,
+            'quantity': cart[str(product.pk)]
+        })
+    context = {
+        'products': products_dicts,
+        'title': 'Корзина',
+    }
+
+    return render(
+        request=request,
+        template_name='myapp/cart.html',
+        context=context,
+    )
